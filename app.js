@@ -1,3 +1,4 @@
+// same logic as v4, loading via cache-busted URL so Vercel doesn't route to index.html
 // MetaMask-only build (no external libs). Sends real txs to your contract.
 const C = window.MEGA_GRID_CONFIG;
 const HEX_CHAIN_ID = "0x" + C.CHAIN_ID.toString(16);

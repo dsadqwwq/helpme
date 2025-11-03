@@ -1,3 +1,4 @@
+// served as a real JS file (not HTML), cache-busted with ?v=5
 window.MEGA_GRID_CONFIG = {
   RPC_URL: "https://carrot.megaeth.com/rpc",
   CHAIN_ID: 6342,
