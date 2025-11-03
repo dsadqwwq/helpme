@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MEGA GRID — Single File (MetaMask)</title>
+  <link rel="icon" href="data:image/x-icon;," />
+  <style>
+  :root{--bg:#0a0a0b;--panel:#0f1116;--ink:#fff;--muted:#98a2b3;--line:#202431;--brand:#8b5cf6;--brand2:#06b6d4}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  .nav{display:flex;align-items:center;justify-content:space-between}
+  .logo{width:24px;height:24px;border-radius:7px;background:conic-gradient(from 210deg,var(--brand),var(--brand2))}
+  .brand{display:flex;gap:10px;align-items:center;font-weight:800}
+  .layout{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .btn{background:#141725;border:1px solid var(--line);border-radius:10px;color:var(--ink);padding:8px 12px;cursor:pointer}
+  .btn.brand{background:linear-gradient(90deg,rgba(139,92,246,.25),rgba(6,182,212,.25))}
+  .btn.small{padding:6px 8px}
+  .input{background:#0e1017;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:8px 10px;min-width:0}
+  .input.small{padding:6px 8px;width:80px}
+  .row{display:flex;gap:10px;align-items:center}.gap{gap:8px}.between{justify-content:space-between}
+  .kicker{font-size:12px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .batchList{list-style:none;margin:8px 0 0;padding:0;max-height:160px;overflow:auto}
+  .batchList li{padding:6px 8px;border:1px dashed #2a3040;border-radius:10px;margin-bottom:6px}
+  #grid{image-rendering:pixelated;background:#0b0b0b;display:block}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;background:#111827;border:1px solid #374151;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  @media(max-width:980px){.layout{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="nav wrap">
+    <div class="brand"><div class="logo"></div><span>MEGA GRID</span></div>
+    <div class="row">
+      <button id="connect" class="btn brand">Connect MetaMask</button>
+      <span id="status" class="muted"></span>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <section class="left">
+      <div class="panel">
+        <div class="row">
+          <label>Pixel size <input id="pxSize" type="number" min="1" max="12" value="2" class="input small"></label>
+          <button id="resetView" class="btn">Reset</button>
+          <button id="clearSelection" class="btn">Clear selection</button>
+          <span id="selCount" class="muted"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <canvas id="grid"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="row between">
+          <strong>Batch queue</strong>
+          <span id="batchCount" class="muted">(0/10)</span>
+        </div>
+        <div class="row gap" style="margin:8px 0">
+          <button id="clearBatch" class="btn small">Clear</button>
+          <button id="runBatch" class="btn brand small">Process (max 10)</button>
+        </div>
+        <ul id="batchList" class="batchList"></ul>
+      </div>
+    </section>
+
+    <aside class="panel right">
+      <div class="kicker">Tile info</div>
+      <h2 id="tileTitle">Hover a tile</h2>
+      <div class="meta">
+        <div>Token ID: <span id="tid" class="mono">—</span></div>
+        <div>Coords: <span id="coords" class="mono">—</span></div>
+        <div>Owner: <span id="owner" class="mono">—</span></div>
+        <div>Status: <span id="statusTile" class="mono">—</span></div>
+        <div>Price: <span id="price" class="mono">—</span></div>
+      </div>
+      <div class="divider"></div>
+
+      <div id="actions">
+        <div id="claimBox" class="action">
+          <h4>Claim (free)</h4>
+          <button class="btn" id="claimBtn">Add Claim to Batch</button>
+        </div>
+
+        <div id="listBox" class="action">
+          <h4>List for sale</h4>
+          <div class="row">
+            <input type="text" id="listPrice" class="input" placeholder="Price in ETH (0 for free)">
+            <button class="btn" id="listBtn">Add List to Batch</button>
+          </div>
+        </div>
+
+        <div id="buyBox" class="action">
+          <h4>Buy</h4>
+          <button class="btn" id="buyBtn">Add Buy to Batch</button>
+          <button class="btn" id="cancelBtn">Add Cancel to Batch</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <footer><div class="wrap muted">© <span id="year"></span> MEGA GRID — Testnet</div></footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear()</script>
+
+<script>
+// ---- Config (inline, no external files) ----
+const CONFIG = {
+  RPC_URL: "https://carrot.megaeth.com/rpc",
+  CHAIN_ID: 6342,
+  TILES_ADDRESS: "0xbB9d6329f20A1099219021Aa43934Bd7b3760039",
+  SELECTORS: {
+    "GRID_SIZE()": "0x496c9f63",
+    "ownerOfIfMinted(uint256)": "0x6352211e",
+    "listings(uint256)": "0x4a45aaf1",
+    "claim(uint256)": "0x379607f5",
+    "listForSale(uint256,uint256)": "0xe80d7fec",
+    "cancelListing(uint256)": "0x305a67a8",
+    "buy(uint256)": "0xd96a094a"
+  }
+};
+</script>
+
+<script>
+// ---- App (MetaMask only) ----
+const C = CONFIG;
+const HEX_CHAIN_ID = "0x" + C.CHAIN_ID.toString(16);
+const S = C.SELECTORS;
+
+const els = {
+  grid: document.getElementById("grid"),
+  pxSize: document.getElementById("pxSize"),
+  resetView: document.getElementById("resetView"),
+  clearSelection: document.getElementById("clearSelection"),
+  selCount: document.getElementById("selCount"),
+  batchList: document.getElementById("batchList"),
+  batchCount: document.getElementById("batchCount"),
+  runBatch: document.getElementById("runBatch"),
+  clearBatch: document.getElementById("clearBatch"),
+  connect: document.getElementById("connect"),
+  status: document.getElementById("status"),
+  tileTitle: document.getElementById("tileTitle"),
+  tid: document.getElementById("tid"),
+  coords: document.getElementById("coords"),
+  owner: document.getElementById("owner"),
+  statusTile: document.getElementById("statusTile"),
+  price: document.getElementById("price"),
+  claimBtn: document.getElementById("claimBtn"),
+  buyBtn: document.getElementById("buyBtn"),
+  cancelBtn: document.getElementById("cancelBtn"),
+  listBtn: document.getElementById("listBtn"),
+  listPrice: document.getElementById("listPrice"),
+};
+
+function toast(msg, ms=1600){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), ms); }
+function short(a){ return a ? a.slice(0,6)+"…"+a.slice(-4) : "—"; }
+function encUint(n){ const bn=BigInt(n); return "0x"+bn.toString(16).padStart(64,"0"); }
+function hexConcat(...arr){ return "0x"+arr.map(x=>x.replace(/^0x/,"")).join(""); }
+function toWei(str){ const v=parseFloat(str||"0"); return BigInt(Math.round(v*1e6))*10n**12n; }
+
+let provider=null, account=null, GRID_SIZE=128, PIXEL=2, ctx;
+const selected=new Set(); const batch=[];
+
+async function ensureProvider(){
+  if(!window.ethereum){ alert("Install MetaMask"); throw new Error("no provider"); }
+  provider=window.ethereum;
+  let cid=await provider.request({method:"eth_chainId"}).catch(()=>null);
+  if(cid!==HEX_CHAIN_ID){
+    try{ await provider.request({method:"wallet_switchEthereumChain", params:[{chainId:HEX_CHAIN_ID}]}); }
+    catch{ await provider.request({method:"wallet_addEthereumChain", params:[{ chainId:HEX_CHAIN_ID, chainName:"MegaETH Testnet", nativeCurrency:{name:"MEGA",symbol:"MEGA",decimals:18}, rpcUrls:[C.RPC_URL], blockExplorerUrls:[] }]}); }
+  }
+  const accs=await provider.request({method:"eth_requestAccounts"});
+  account=accs[0]; els.status.textContent="connected "+short(account);
+  provider.on?.("accountsChanged",(a)=>{ account=a[0]||null; els.status.textContent=account?("connected "+short(account)):"—"; });
+  provider.on?.("chainChanged",()=>location.reload());
+}
+async function ethCall(sel,args="0x"){ return await provider.request({ method:"eth_call", params:[{to:C.TILES_ADDRESS,data:hexConcat(sel,args)},"latest"] }); }
+async function ethSend(sel,args="0x",value="0x0"){
+  const hash = await provider.request({ method:"eth_sendTransaction", params:[{ from:account, to:C.TILES_ADDRESS, value, data:hexConcat(sel,args) }] });
+  toast("tx "+hash.slice(0,10)+"…"); return hash;
+}
+function parseAddressWord(word){ const w=word.replace(/^0x/,""); const a=w.slice(24*2,32*2); if(/^0+$/.test(a)) return null; return "0x"+a; }
+
+async function loadGridSize(){ try{ const res=await ethCall(S["GRID_SIZE()"]); GRID_SIZE=Number(BigInt(res)); }catch{} }
+
+function setupCanvas(){
+  const W=GRID_SIZE*PIXEL; els.grid.width=W; els.grid.height=W; els.grid.style.width=W+"px"; els.grid.style.height=W+"px";
+  ctx=els.grid.getContext("2d");
+  for(let y=0;y<GRID_SIZE;y++){ for(let x=0;x<GRID_SIZE;x++){ ctx.fillStyle=((x+y)%2===0)?"#141414":"#101010"; ctx.fillRect(x*PIXEL,y*PIXEL,PIXEL,PIXEL); } }
+  selected.forEach(id=>{ const y=Math.floor(id/GRID_SIZE),x=id%GRID_SIZE; ctx.strokeStyle="#8b5cf6"; ctx.strokeRect(x*PIXEL+0.5,y*PIXEL+0.5,PIXEL-1,PIXEL-1); });
+}
+function baseFill(x,y){ ctx.fillStyle=((x+y)%2===0)?"#141414":"#101010"; ctx.fillRect(x*PIXEL,y*PIXEL,PIXEL,PIXEL); }
+function drawHover(x,y){ ctx.strokeStyle="#fff"; ctx.strokeRect(x*PIXEL+0.5,y*PIXEL+0.5,PIXEL-1,PIXEL-1); }
+function drawSelect(x,y){ ctx.strokeStyle="#8b5cf6"; ctx.strokeRect(x*PIXEL+0.5,y*PIXEL+0.5,PIXEL-1,PIXEL-1); }
+function redrawTile(x,y){ baseFill(x,y); if(selected.has(y*GRID_SIZE+x)) drawSelect(x,y); }
+
+let hover={x:-1,y:-1,id:-1}, retain=new Map(), hoverDebounce=0;
+els.grid.addEventListener("mousemove",(e)=>{
+  const r=els.grid.getBoundingClientRect(); const x=Math.floor((e.clientX-r.left)/PIXEL); const y=Math.floor((e.clientY-r.top)/PIXEL);
+  if(x===hover.x && y===hover.y) return;
+  if(hover.x>=0){ const prev={x:hover.x,y:hover.y,id:hover.id}; if(retain.has(prev.id)) clearTimeout(retain.get(prev.id)); retain.set(prev.id,setTimeout(()=>{ if(!selected.has(prev.id) && prev.id!==(y*GRID_SIZE+x)) redrawTile(prev.x,prev.y); retain.delete(prev.id); },1000)); }
+  hover={x,y,id:y*GRID_SIZE+x}; drawHover(x,y);
+  clearTimeout(hoverDebounce); hoverDebounce=setTimeout(()=>loadTileMeta(hover.id,x,y),120);
+});
+els.grid.addEventListener("mouseleave",()=>{
+  if(hover.x>=0){ const prev={x:hover.x,y:hover.y,id:hover.id}; if(retain.has(prev.id)) clearTimeout(retain.get(prev.id)); retain.set(prev.id,setTimeout(()=>{ if(!selected.has(prev.id)) redrawTile(prev.x,prev.y); retain.delete(prev.id); },1000)); }
+  hover={x:-1,y:-1,id:-1}; els.tileTitle.textContent="Hover a tile"; els.tid.textContent="—"; els.coords.textContent="—"; els.owner.textContent="—"; els.statusTile.textContent="—"; els.price.textContent="—";
+});
+els.grid.addEventListener("click",(e)=>{
+  const r=els.grid.getBoundingClientRect(); const x=Math.floor((e.clientX-r.left)/PIXEL); const y=Math.floor((e.clientY-r.top)/PIXEL);
+  if(x<0||y<0||x>=GRID_SIZE||y>=GRID_SIZE) return;
+  const id=y*GRID_SIZE+x;
+  if(selected.has(id)){ selected.delete(id); redrawTile(x,y);} else { if(selected.size>=10){ toast("Max 10"); return;} selected.add(id); drawSelect(x,y); }
+  els.selCount.textContent = selected.size ? `Selected: ${selected.size}` : "";
+});
+
+async function loadTileMeta(tokenId,x,y){
+  els.tileTitle.textContent=`Tile #${tokenId}`; els.tid.textContent=tokenId; els.coords.textContent=`(${x}, ${y})`;
+  try{
+    const idHex=encUint(tokenId);
+    const [ownerHex, listingHex]=await Promise.all([ ethCall(S["ownerOfIfMinted(uint256)"], idHex), ethCall(S["listings(uint256)"], idHex) ]);
+    const owner=parseAddressWord(ownerHex);
+    const packed=listingHex.replace(/^0x/,"").padEnd(64*2,"0");
+    const seller=parseAddressWord("0x"+packed.slice(0,64));
+    const priceWei=BigInt("0x"+packed.slice(64,128));
+    els.owner.textContent=owner?short(owner):"—";
+    if(!owner){ els.statusTile.textContent="Unclaimed"; els.price.textContent="—"; showPanel("claim", null, tokenId); }
+    else if(seller){ els.statusTile.textContent="Listed"; els.price.textContent=String(Number(priceWei)/1e18)+" ETH"; showPanel("buy", {priceWei}, tokenId); }
+    else { els.statusTile.textContent="Owned"; els.price.textContent="—"; showPanel("list", null, tokenId); }
+  }catch(e){ console.warn("meta load", e); }
+}
+
+function showPanel(which, data, tokenId){
+  document.getElementById("claimBox").style.display=(which==="claim")?"block":"none";
+  document.getElementById("listBox").style.display=(which==="list")?"block":"none";
+  document.getElementById("buyBox").style.display =(which==="buy") ?"block":"none";
+  const targets = selected.size?Array.from(selected):(tokenId!=null?[tokenId]:[]);
+  const room = (arr)=>arr.slice(0, 10 - batch.length);
+  if(which==="claim") document.getElementById("claimBtn").onclick=()=>{ const ids=room(targets); if(!ids.length) return toast("No tiles"); ids.forEach(id=>pushBatch({type:"claim", tokenId:id})); };
+  if(which==="list") document.getElementById("listBtn").onclick=()=>{ const v=(document.getElementById("listPrice").value||"0").trim(); if(!/^[0-9]+(\.[0-9]+)?$/.test(v)) return toast("Bad price"); const wei=toWei(v); const ids=room(targets); if(!ids.length) return toast("No tiles"); ids.forEach(id=>pushBatch({type:"list", tokenId:id, priceWei:wei})); };
+  if(which==="buy"){ document.getElementById("buyBtn").onclick=()=>{ const ids=room(targets); if(!ids.length) return toast("No tiles"); ids.forEach(id=>pushBatch({type:"buy", tokenId:id, priceWei:data.priceWei})); }; document.getElementById("cancelBtn").onclick=()=>{ const ids=room(targets); if(!ids.length) return toast("No tiles"); ids.forEach(id=>pushBatch({type:"cancel", tokenId:id})); };
+}
+function pushBatch(it){ if(batch.length>=10){ toast("Batch full"); return;} batch.push(it); const li=document.createElement("li"); li.textContent=`${it.type.toUpperCase()} #${it.tokenId}`+(it.priceWei?` @ ${Number(it.priceWei)/1e18} ETH`:""); document.getElementById("batchList").appendChild(li); document.getElementById("batchCount").textContent=`(${batch.length}/10)`; }
+function clearBatch(){ batch.length=0; document.getElementById("batchList").innerHTML=""; document.getElementById("batchCount").textContent="(0/10)"; }
+document.getElementById("clearBatch").onclick = clearBatch;
+
+async function processBatch(){
+  if(!provider||!account) return toast("Connect wallet first");
+  if(!batch.length) return toast("Batch empty");
+  document.getElementById("runBatch").disabled=true;
+  try{
+    let i=0;
+    while(batch.length && i<10){
+      const it=batch.shift();
+      if(it.type==="claim"){ await ethSend(S["claim(uint256)"], encUint(it.tokenId)); }
+      else if(it.type==="list"){ await ethSend(S["listForSale(uint256,uint256)"], hexConcat(encUint(it.tokenId), encUint(it.priceWei))); }
+      else if(it.type==="buy"){ await ethSend(S["buy(uint256)"], encUint(it.tokenId), "0x"+it.priceWei.toString(16)); }
+      else if(it.type==="cancel"){ await ethSend(S["cancelListing(uint256)"], encUint(it.tokenId)); }
+      const list=document.getElementById("batchList"); if(list.firstChild) list.removeChild(list.firstChild);
+      document.getElementById("batchCount").textContent=`(${batch.length}/10)`; i++;
+    }
+  }catch(e){ console.error("process error", e); toast("Tx failed (console)"); }
+  document.getElementById("runBatch").disabled=false;
+}
+
+function init(){
+  PIXEL=Math.max(1,Math.min(12,Number(document.getElementById("pxSize").value)||2));
+  setupCanvas();
+  document.getElementById("pxSize").addEventListener("change",()=>{ PIXEL=Math.max(1,Math.min(12,Number(document.getElementById("pxSize").value)||2)); setupCanvas(); });
+  document.getElementById("resetView").addEventListener("click", setupCanvas);
+  document.getElementById("clearSelection").addEventListener("click", ()=>{ selected.clear(); setupCanvas(); document.getElementById("selCount").textContent=""; });
+  document.getElementById("runBatch").addEventListener("click", processBatch);
+  document.getElementById("connect").addEventListener("click", async ()=>{ try{ await ensureProvider(); await loadGridSize(); setupCanvas(); }catch(e){ console.error(e); toast("Connect failed"); } });
+}
+window.addEventListener("load", init);
+</script>
+
+</body>
+</html>
